@@ -1,0 +1,16 @@
+.DS_Store
+bin/
+/gateway
+*.test
+*.out
+coverage.out
+traces/
+
+# IDE / local tooling
+.idea/
+.claude/
+
+# Internal docs (not for public repo)
+docs/
+BACKGROUND.md
+ARCHITECTURE.md

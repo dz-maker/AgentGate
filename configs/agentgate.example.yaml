@@ -1,0 +1,113 @@
+server:
+  addr: ":9000"
+
+# Where Agent Trace JSONL files land. /debug/trace/{id}/replay reads from
+# here, so persist this directory across restarts if you care about
+# post-mortem trace replay.
+trace_dir: traces
+
+# v0.1 prefix-locality feature: route requests with shared prefixes to the
+# same backend instance to maximise vLLM APC / SGLang RadixAttention
+# hit-rate. See docs/design/prefix-cache.md.
+prefix_cache:
+  enabled: true
+  max_entries: 100000
+  half_life: 5m
+  debug_content: false
+
+# v0.2 semantic cache: exact-match + tool-result + singleflight collapse.
+# Tier-by-tier behaviour is in internal/cache/semantic/doc.go.
+semantic_cache:
+  enabled: true
+  max_entries: 10000
+  ttl_exact: 5m
+  ttl_tool: 10m
+
+# Streaming tool-call early stop: detect a complete tool_call inside the
+# stream and cancel the upstream decode.
+tool_parser:
+  enabled: true
+  aggressive_abort: true
+  max_buffer_bytes: 16384
+
+timeouts:
+  header: 30s
+  health_check: 2s
+
+# v1.0 fallback chain: per-backend circuit breaker + ordered backend list
+# evaluated by the policy engine.
+fallback:
+  failure_threshold: 5
+  success_threshold: 2
+  cooldown: 10s
+
+# v1.0 declarative policy. Leave path empty to disable. Schema:
+# routing[], cache[], budgets[]. See docs/design/policy.md.
+#
+# To use the bundled example: set path: configs/policy.example.yaml AND
+# uncomment the matching backend stubs below (vllm-prod, openai-cloud,
+# ollama-edge, anthropic-cloud) — otherwise routing rules pointing at
+# missing backends silently fall through.
+policy:
+  path: ""
+
+# v0.2 OTLP-HTTP exporter. Leave endpoint empty to disable. Spans are also
+# always written locally to {trace_dir}/YYYY-MM-DD.jsonl.
+telemetry:
+  otlp:
+    endpoint: ""
+    service_name: agentgate
+    batch_size: 64
+    flush_every: 5s
+
+backends:
+  - name: local-mock
+    type: mock
+
+  # ---------- self-hosted OpenAI-compatible engines ----------
+  #
+  # vLLM cluster (deep integration: APC-aware, multi-instance):
+  # - name: vllm-prod
+  #   type: vllm
+  #   endpoints:
+  #     - http://localhost:8000
+  #     - http://localhost:8001
+  #   headers:
+  #     Authorization: "Bearer ${VLLM_API_KEY}"
+  #
+  # SGLang (RadixAttention; gateway treats prefix sharing as more
+  # valuable than vLLM since matches are not block-aligned):
+  # - name: sglang-edge
+  #   type: sglang
+  #   endpoints:
+  #     - http://localhost:30000
+  #
+  # Ollama (single-instance, no APC, no abort — capability sheet
+  # surfaces these gaps so the router skips sticky logic):
+  # - name: ollama-edge
+  #   type: ollama
+  #   endpoint: http://localhost:11434
+  #
+  # ---------- cloud APIs ----------
+  #
+  # OpenAI-protocol cloud (works for OpenAI, DeepSeek, Moonshot,
+  # Together, Fireworks; set vendor + cost):
+  # - name: openai-cloud
+  #   type: openai
+  #   endpoint: https://api.openai.com
+  #   api_key: "${OPENAI_API_KEY}"
+  #   vendor: openai
+  #   models: [gpt-4o-mini]
+  #   cost:
+  #     input_usd_per_1k: 0.00015
+  #     output_usd_per_1k: 0.0006
+  #
+  # Anthropic Messages API (separate protocol — adapter handles the
+  # system/tools split and event-stream SSE):
+  # - name: anthropic-cloud
+  #   type: anthropic
+  #   api_key: "${ANTHROPIC_API_KEY}"
+  #   models: [claude-3-5-sonnet-20241022]
+  #   cost:
+  #     input_usd_per_1k: 0.003
+  #     output_usd_per_1k: 0.015

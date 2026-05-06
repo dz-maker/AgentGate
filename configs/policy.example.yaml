@@ -1,0 +1,73 @@
+# Example AgentGate policy file.
+#
+# Activate by setting policy.path in agentgate.yaml. Empty file = no
+# policy. First-match-wins evaluation order: routing rules, then cache
+# rules, then budget rules. See internal/policy/doc.go for semantics.
+#
+# IMPORTANT: the backend names referenced below (vllm-prod, openai-cloud,
+# ollama-edge, anthropic-cloud) must match `backends[].name` entries in
+# your agentgate.yaml. The matching stubs are commented out in
+# configs/agentgate.example.yaml — uncomment and fill them in before
+# enabling this policy, otherwise routing rules silently fall through
+# when their target backend is missing.
+
+routing:
+  # Route premium tenants to the GPU pool first, then OpenAI cloud as
+  # fallback when the cluster is degraded.
+  - name: premium-to-gpu
+    when:
+      tenant: premium
+    backend: vllm-prod
+    fallback:
+      - openai-cloud
+
+  # Free tier goes to Ollama; if that's down, fall through to mock.
+  - name: free-to-edge
+    when:
+      tenant: free
+    backend: ollama-edge
+
+  # Anthropic-specific routing: any request that asked for an Anthropic
+  # model should hit the cloud directly (we don't shadow Anthropic
+  # locally).
+  - name: anthropic-direct
+    when:
+      vendor: anthropic
+    backend: anthropic-cloud
+
+cache:
+  # Disable the semantic cache for trace-sensitive flows.
+  - name: never-cache-secrets
+    when:
+      tenant: secrets-team
+    action: skip
+
+  # Aggressively cache deterministic tool results for the analytics
+  # tenant — they call the same tools with the same args repeatedly.
+  - name: aggressive-tool-cache
+    when:
+      tenant: analytics
+      step_type: tool_call
+    action: use
+    tier: tool_result
+    ttl: 30m
+
+budgets:
+  # Hard cap on Anthropic spend per tenant per day. Going over returns
+  # 429 with Retry-After.
+  - name: anthropic-daily-cap
+    when:
+      vendor: anthropic
+    window: 24h
+    max_usd: 50.0
+    action: deny
+
+  # Soft warning on per-tenant token budget — informational only, the
+  # request still succeeds. Useful for catching runaway agents in
+  # development.
+  - name: dev-warn
+    when:
+      tenant: dev-sandbox
+    window: 1h
+    max_tokens: 5000000
+    action: warn
