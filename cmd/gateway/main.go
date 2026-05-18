@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -138,7 +139,7 @@ func main() {
 
 	go func() {
 		logger.Info("agentgate listening", "addr", cfg.Server.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("server stopped", "err", err)
 			os.Exit(1)
 		}
@@ -210,13 +211,9 @@ func buildRegistry(cfg *config.Config) (*backend.Registry, error) {
 			}
 			backends = append(backends, b)
 		case "openai":
-			endpoint := ""
-			if eps := item.AllEndpoints(); len(eps) > 0 {
-				endpoint = eps[0]
-			}
 			b, err := openai.New(openai.Options{
 				Name:          item.Name,
-				Endpoint:      endpoint,
+				Endpoint:      firstEndpoint(item),
 				APIKey:        item.APIKey,
 				Headers:       item.Headers,
 				Vendor:        item.Vendor,
@@ -229,13 +226,9 @@ func buildRegistry(cfg *config.Config) (*backend.Registry, error) {
 			}
 			backends = append(backends, b)
 		case "anthropic":
-			endpoint := ""
-			if eps := item.AllEndpoints(); len(eps) > 0 {
-				endpoint = eps[0]
-			}
 			b, err := anthropic.New(anthropic.Options{
 				Name:          item.Name,
-				Endpoint:      endpoint,
+				Endpoint:      firstEndpoint(item),
 				APIKey:        item.APIKey,
 				Models:        item.Models,
 				Cost:          types.CostProfile(item.Cost),
@@ -251,4 +244,14 @@ func buildRegistry(cfg *config.Config) (*backend.Registry, error) {
 		}
 	}
 	return backend.NewRegistry(backends), nil
+}
+
+// firstEndpoint returns the first configured endpoint for backends that
+// only accept a single upstream URL (openai, anthropic). Returns "" if
+// none is configured, letting the adapter fall back to its vendor default.
+func firstEndpoint(b config.BackendConfig) string {
+	if eps := b.AllEndpoints(); len(eps) > 0 {
+		return eps[0]
+	}
+	return ""
 }
