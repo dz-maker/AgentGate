@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -36,7 +38,13 @@ import (
 func main() {
 	configPath := flag.String("c", "configs/agentgate.example.yaml", "config file")
 	addr := flag.String("addr", "", "override listen address")
+	showVersion := flag.Bool("version", false, "print build info and exit")
 	flag.Parse()
+
+	if *showVersion {
+		printVersion(os.Stdout)
+		return
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
@@ -244,6 +252,35 @@ func buildRegistry(cfg *config.Config) (*backend.Registry, error) {
 		}
 	}
 	return backend.NewRegistry(backends), nil
+}
+
+// printVersion writes a short build summary using the module info Go
+// embeds at build time. With `go install`, this includes the module
+// version; with `go build` from source, it falls back to the VCS revision
+// recorded by the toolchain.
+func printVersion(w *os.File) {
+	version := "devel"
+	revision := ""
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" {
+				revision = s.Value
+				break
+			}
+		}
+	}
+	fmt.Fprintf(w, "agentgate %s", version)
+	if revision != "" {
+		short := revision
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		fmt.Fprintf(w, " (%s)", short)
+	}
+	fmt.Fprintf(w, " %s/%s %s\n", runtime.GOOS, runtime.GOARCH, runtime.Version())
 }
 
 // firstEndpoint returns the first configured endpoint for backends that
