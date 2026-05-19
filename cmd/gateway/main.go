@@ -101,22 +101,12 @@ func main() {
 
 	traceStore := agenttrace.NewStore(cfg.TraceDir)
 	defer traceStore.Close()
-	if cfg.Telemetry.OTLP.Endpoint != "" {
-		exp, err := otel.New(otel.Options{
-			Endpoint:    cfg.Telemetry.OTLP.Endpoint,
-			Headers:     cfg.Telemetry.OTLP.Headers,
-			ServiceName: cfg.Telemetry.OTLP.ServiceName,
-			BatchSize:   cfg.Telemetry.OTLP.BatchSize,
-			FlushEvery:  cfg.Telemetry.OTLP.FlushEvery,
-			ErrorFn:     func(err error) { logger.Warn("otel export", "err", err) },
-		})
-		if err != nil {
-			logger.Error("otel exporter", "err", err)
-			os.Exit(1)
-		}
-		traceStore.AddSink(exp)
-		defer func() { _ = exp.Close(context.Background()) }()
+	otelClose, err := attachOTLPSink(cfg.Telemetry.OTLP, traceStore, logger)
+	if err != nil {
+		logger.Error("otel exporter", "err", err)
+		os.Exit(1)
 	}
+	defer otelClose()
 
 	r := router.New(registry, prefixSvc)
 	api := handler.New(handler.Options{
@@ -281,6 +271,28 @@ func printVersion(w *os.File) {
 		fmt.Fprintf(w, " (%s)", short)
 	}
 	fmt.Fprintf(w, " %s/%s %s\n", runtime.GOOS, runtime.GOARCH, runtime.Version())
+}
+
+// attachOTLPSink wires an OTLP exporter into traceStore when an
+// endpoint is configured. The returned cleanup is always safe to defer,
+// even when no exporter was attached (it is a no-op in that case).
+func attachOTLPSink(cfg config.OTLPConfig, traceStore *agenttrace.Store, logger *slog.Logger) (func(), error) {
+	if cfg.Endpoint == "" {
+		return func() {}, nil
+	}
+	exp, err := otel.New(otel.Options{
+		Endpoint:    cfg.Endpoint,
+		Headers:     cfg.Headers,
+		ServiceName: cfg.ServiceName,
+		BatchSize:   cfg.BatchSize,
+		FlushEvery:  cfg.FlushEvery,
+		ErrorFn:     func(err error) { logger.Warn("otel export", "err", err) },
+	})
+	if err != nil {
+		return func() {}, err
+	}
+	traceStore.AddSink(exp)
+	return func() { _ = exp.Close(context.Background()) }, nil
 }
 
 // firstEndpoint returns the first configured endpoint for backends that
