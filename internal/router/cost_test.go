@@ -45,6 +45,18 @@ func TestCostModelEWMAMakesObservationsConverge(t *testing.T) {
 	}
 }
 
+func TestCostModelObservesSubMillisecondLatency(t *testing.T) {
+	cm := NewCostModel()
+	cm.Observe("b", 1000, 500*time.Microsecond)
+	snap := cm.Snapshot()["b"]
+	if snap.MeanLatency <= 0 {
+		t.Fatalf("sub-ms latency should be recorded, got %f", snap.MeanLatency)
+	}
+	if snap.MeanLatency >= 1 {
+		t.Fatalf("500us should record as <1ms, got %f", snap.MeanLatency)
+	}
+}
+
 func abs(f float64) float64 {
 	if f < 0 {
 		return -f

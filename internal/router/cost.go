@@ -93,7 +93,11 @@ func (cm *CostModel) Observe(backendName string, tokens int, latency time.Durati
 			stat.meanTokens = ewma(stat.meanTokens, float64(tokens), cm.alpha)
 		}
 	}
-	ms := float64(latency.Milliseconds())
+	// Use Seconds()*1000 instead of Milliseconds(): the latter truncates
+	// to int64 and zeroes out sub-millisecond observations from local
+	// mocks and warm-cache hits, which then look like "no signal" instead
+	// of "very fast" to the EWMA.
+	ms := latency.Seconds() * 1000
 	if ms > 0 {
 		if stat.meanLatency == 0 {
 			stat.meanLatency = ms
