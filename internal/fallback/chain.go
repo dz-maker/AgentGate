@@ -54,42 +54,35 @@ func NewChain(breakers *Set) *Chain {
 
 // Complete walks the chain for non-streaming requests.
 func (c *Chain) Complete(ctx context.Context, reg Registry, names []string, req *types.Request) (Result, error) {
-	if len(names) == 0 {
-		return Result{}, errors.New("fallback chain is empty")
-	}
-	var outcomes []AttemptOutcome
-	var lastErr error
-	for _, name := range names {
-		b, ok := reg.ByName(name)
-		if !ok {
-			outcomes = append(outcomes, AttemptOutcome{BackendName: name, Skipped: true, SkipReason: "backend not registered"})
-			continue
-		}
-		breaker := c.breakers.For(name)
-		if !breaker.Allow() {
-			outcomes = append(outcomes, AttemptOutcome{BackendName: name, Skipped: true, SkipReason: "breaker open"})
-			continue
-		}
-
+	return c.walk(reg, names, func(b backend.Backend) (Result, error) {
 		resp, err := b.Complete(ctx, req)
 		if err != nil {
-			breaker.Failure()
-			outcomes = append(outcomes, AttemptOutcome{BackendName: name, Err: err})
-			lastErr = err
-			continue
+			return Result{}, err
 		}
-		breaker.Success()
-		return Result{Resp: resp, Backend: b, Outcomes: append(outcomes, AttemptOutcome{BackendName: name})}, nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("all %d backends in chain were unavailable", len(names))
-	}
-	return Result{Outcomes: outcomes}, lastErr
+		return Result{Resp: resp}, nil
+	})
 }
 
 // Stream walks the chain for streaming requests. See struct doc on why
 // once we open a stream we do not fall back further.
+//
+// Note: walk records breaker success on stream OPEN, not on stream
+// completion. The adapter is responsible for its own per-chunk health
+// logic; see vllm/adapter.go inst.success/inst.fail.
 func (c *Chain) Stream(ctx context.Context, reg Registry, names []string, req *types.Request) (Result, error) {
+	return c.walk(reg, names, func(b backend.Backend) (Result, error) {
+		stream, err := b.Stream(ctx, req)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Stream: stream}, nil
+	})
+}
+
+// walk runs the per-name registry lookup + breaker gating loop shared by
+// Complete and Stream. attempt returns the request-specific payload
+// (Resp or Stream) on success; Backend and Outcomes are filled in here.
+func (c *Chain) walk(reg Registry, names []string, attempt func(b backend.Backend) (Result, error)) (Result, error) {
 	if len(names) == 0 {
 		return Result{}, errors.New("fallback chain is empty")
 	}
@@ -106,18 +99,17 @@ func (c *Chain) Stream(ctx context.Context, reg Registry, names []string, req *t
 			outcomes = append(outcomes, AttemptOutcome{BackendName: name, Skipped: true, SkipReason: "breaker open"})
 			continue
 		}
-		stream, err := b.Stream(ctx, req)
+		res, err := attempt(b)
 		if err != nil {
 			breaker.Failure()
 			outcomes = append(outcomes, AttemptOutcome{BackendName: name, Err: err})
 			lastErr = err
 			continue
 		}
-		// Note: we record success on stream OPEN, not on stream completion.
-		// The adapter is responsible for its own per-chunk health logic;
-		// see vllm/adapter.go inst.success/inst.fail.
 		breaker.Success()
-		return Result{Stream: stream, Backend: b, Outcomes: append(outcomes, AttemptOutcome{BackendName: name})}, nil
+		res.Backend = b
+		res.Outcomes = append(outcomes, AttemptOutcome{BackendName: name})
+		return res, nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("all %d backends in chain were unavailable", len(names))
