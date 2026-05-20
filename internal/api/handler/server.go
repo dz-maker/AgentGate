@@ -516,13 +516,22 @@ func (s *Server) applySuccess(w http.ResponseWriter, original types.Request, res
 	}
 	s.router.Feedback(attempt.req, decision)
 	if resp.Usage != nil {
-		if s.cost != nil {
-			s.cost.Observe(decision.Backend.Name(), resp.Usage.TotalTokens, time.Since(span.StartedAt))
-		}
-		if s.policy != nil && !s.policy.Empty() {
-			usd := computeUSD(decision.Backend.Capabilities().CostProfile, *resp.Usage)
-			s.policy.AccountUsage(original, decision.Backend.Capabilities().Vendor, resp.Usage.TotalTokens, usd)
-		}
+		s.recordCostAndPolicy(original, decision.Backend.Name(), decision.Backend.Capabilities().Vendor, decision.Backend.Capabilities().CostProfile, *resp.Usage, time.Since(span.StartedAt))
+	}
+}
+
+// recordCostAndPolicy feeds the cost model with an observation and
+// accounts token usage to the policy engine's budget tracker. It is
+// called from both the non-streaming path (applySuccess) and the
+// streaming path (streamChat) so the bookkeeping logic stays in one
+// place.
+func (s *Server) recordCostAndPolicy(req types.Request, backendName, vendor string, costProfile types.CostProfile, usage types.Usage, latency time.Duration) {
+	if s.cost != nil {
+		s.cost.Observe(backendName, usage.TotalTokens, latency)
+	}
+	if s.policy != nil && !s.policy.Empty() {
+		usd := computeUSD(costProfile, usage)
+		s.policy.AccountUsage(req, vendor, usage.TotalTokens, usd)
 	}
 }
 
@@ -757,18 +766,12 @@ func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, req types.Re
 
 	s.router.Feedback(req, decision)
 	if span.TotalTokens > 0 {
-		if s.cost != nil {
-			s.cost.Observe(decision.Backend.Name(), span.TotalTokens, time.Since(span.StartedAt))
+		usage := types.Usage{
+			PromptTokens:     span.PromptTokens,
+			CompletionTokens: span.CompletionTokens,
+			TotalTokens:      span.TotalTokens,
 		}
-		if s.policy != nil && !s.policy.Empty() {
-			usage := types.Usage{
-				PromptTokens:     span.PromptTokens,
-				CompletionTokens: span.CompletionTokens,
-				TotalTokens:      span.TotalTokens,
-			}
-			usd := computeUSD(decision.Backend.Capabilities().CostProfile, usage)
-			s.policy.AccountUsage(req, decision.Backend.Capabilities().Vendor, span.TotalTokens, usd)
-		}
+		s.recordCostAndPolicy(req, decision.Backend.Name(), decision.Backend.Capabilities().Vendor, decision.Backend.Capabilities().CostProfile, usage, time.Since(span.StartedAt))
 	}
 	done()
 }
