@@ -54,12 +54,16 @@ func New(opts Options) (*Adapter, error) {
 	if opts.Endpoint == "" {
 		opts.Endpoint = "https://api.openai.com"
 	}
+	vendor := opts.Vendor
+	if vendor == "" {
+		vendor = "openai"
+	}
 	a := &Adapter{
 		name:     opts.Name,
 		endpoint: strings.TrimRight(opts.Endpoint, "/"),
 		apiKey:   opts.APIKey,
 		headers:  opts.Headers,
-		vendor:   defaultString(opts.Vendor, "openai"),
+		vendor:   vendor,
 		models:   append([]string(nil), opts.Models...),
 		cost:     opts.Cost,
 		client:   httpx.NewClient(httpx.Options{HeaderTimeout: opts.HeaderTimeout}),
@@ -67,13 +71,6 @@ func New(opts Options) (*Adapter, error) {
 	}
 	a.healthy.Store(true)
 	return a, nil
-}
-
-func defaultString(v, fallback string) string {
-	if v == "" {
-		return fallback
-	}
-	return v
 }
 
 func (a *Adapter) Name() string { return a.name }
