@@ -241,13 +241,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		if result.status == 0 {
 			result.status = http.StatusBadGateway
 		}
-		if result.attempt.policy.BudgetRetryAfter > 0 {
-			retry := int(result.attempt.policy.BudgetRetryAfter.Seconds())
-			if retry < 1 {
-				retry = 1
-			}
-			w.Header().Set("Retry-After", strconv.Itoa(retry))
-		}
+		setBudgetRetryAfter(w, result.attempt.policy.BudgetRetryAfter)
 		writeError(w, result.status, result.err.Error())
 		return
 	}
@@ -625,13 +619,7 @@ func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, req types.Re
 	if opened.err != nil {
 		span.Status = "error"
 		span.ErrorMessage = opened.err.Error()
-		if opened.attempt.policy.BudgetRetryAfter > 0 {
-			retry := int(opened.attempt.policy.BudgetRetryAfter.Seconds())
-			if retry < 1 {
-				retry = 1
-			}
-			w.Header().Set("Retry-After", strconv.Itoa(retry))
-		}
+		setBudgetRetryAfter(w, opened.attempt.policy.BudgetRetryAfter)
 		if opened.status == 0 {
 			opened.status = http.StatusBadGateway
 		}
@@ -952,6 +940,17 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 			"type":    "agentgate_error",
 		},
 	})
+}
+
+func setBudgetRetryAfter(w http.ResponseWriter, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	sec := int(d.Seconds())
+	if sec < 1 {
+		sec = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(sec))
 }
 
 func withCORS(next http.Handler) http.Handler {
