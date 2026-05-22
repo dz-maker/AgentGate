@@ -497,10 +497,7 @@ func (s *Server) applySuccess(w http.ResponseWriter, original types.Request, res
 	attempt := result.attempt
 	decision := attempt.decision
 	resp := result.resp
-	span.Backend = decision.Backend.Name()
-	span.Instance = decision.InstanceID
-	span.PrefixMatchTokens = decision.PrefixMatch.MatchedTokens
-	span.PrefixMatchReason = decision.PrefixMatch.Reason
+	setSpanDecision(span, decision)
 	if resp != nil && resp.Usage != nil {
 		span.PromptTokens = resp.Usage.PromptTokens
 		span.CompletionTokens = resp.Usage.CompletionTokens
@@ -533,6 +530,13 @@ func (s *Server) recordCostAndPolicy(req types.Request, backendName, vendor stri
 		usd := computeUSD(costProfile, usage)
 		s.policy.AccountUsage(req, vendor, usage.TotalTokens, usd)
 	}
+}
+
+func setSpanDecision(span *agenttrace.Span, decision router.Decision) {
+	span.Backend = decision.Backend.Name()
+	span.Instance = decision.InstanceID
+	span.PrefixMatchTokens = decision.PrefixMatch.MatchedTokens
+	span.PrefixMatchReason = decision.PrefixMatch.Reason
 }
 
 func setDecisionHeaders(w http.ResponseWriter, attempt requestAttempt) {
@@ -639,10 +643,7 @@ func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, req types.Re
 	req = attempt.req
 	decision := attempt.decision
 	stream := opened.stream
-	span.Backend = decision.Backend.Name()
-	span.Instance = decision.InstanceID
-	span.PrefixMatchTokens = decision.PrefixMatch.MatchedTokens
-	span.PrefixMatchReason = decision.PrefixMatch.Reason
+	setSpanDecision(span, decision)
 	if reason := fallbackReason(opened.outcomes); reason != "" {
 		span.FallbackReason = reason
 	}
