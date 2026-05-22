@@ -498,10 +498,8 @@ func (s *Server) applySuccess(w http.ResponseWriter, original types.Request, res
 	decision := attempt.decision
 	resp := result.resp
 	setSpanDecision(span, decision)
-	if resp != nil && resp.Usage != nil {
-		span.PromptTokens = resp.Usage.PromptTokens
-		span.CompletionTokens = resp.Usage.CompletionTokens
-		span.TotalTokens = resp.Usage.TotalTokens
+	if resp != nil {
+		setSpanUsage(span, resp.Usage)
 	}
 	if result.cacheTier != "" {
 		span.FallbackReason = "cache_" + result.cacheTier
@@ -537,6 +535,15 @@ func setSpanDecision(span *agenttrace.Span, decision router.Decision) {
 	span.Instance = decision.InstanceID
 	span.PrefixMatchTokens = decision.PrefixMatch.MatchedTokens
 	span.PrefixMatchReason = decision.PrefixMatch.Reason
+}
+
+func setSpanUsage(span *agenttrace.Span, usage *types.Usage) {
+	if usage == nil {
+		return
+	}
+	span.PromptTokens = usage.PromptTokens
+	span.CompletionTokens = usage.CompletionTokens
+	span.TotalTokens = usage.TotalTokens
 }
 
 func setDecisionHeaders(w http.ResponseWriter, attempt requestAttempt) {
@@ -691,11 +698,7 @@ func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, req types.Re
 			if toolParser != nil && len(chunk.ToolCalls) > 0 {
 				toolParser.Reset()
 			}
-			if chunk.Usage != nil {
-				span.PromptTokens = chunk.Usage.PromptTokens
-				span.CompletionTokens = chunk.Usage.CompletionTokens
-				span.TotalTokens = chunk.Usage.TotalTokens
-			}
+			setSpanUsage(span, chunk.Usage)
 			if !send(protocol.ChunkFromBackend(chunk)) {
 				span.Status = "partial"
 				span.ErrorMessage = "client disconnected while sending stream chunk"
