@@ -511,7 +511,7 @@ func (s *Server) applySuccess(w http.ResponseWriter, original types.Request, res
 	}
 	s.router.Feedback(attempt.req, decision)
 	if resp.Usage != nil {
-		s.recordCostAndPolicy(original, decision.Backend.Name(), decision.Backend.Capabilities().Vendor, decision.Backend.Capabilities().CostProfile, *resp.Usage, time.Since(span.StartedAt))
+		s.recordCostAndPolicy(original, decision, *resp.Usage, time.Since(span.StartedAt))
 	}
 }
 
@@ -520,13 +520,14 @@ func (s *Server) applySuccess(w http.ResponseWriter, original types.Request, res
 // called from both the non-streaming path (applySuccess) and the
 // streaming path (streamChat) so the bookkeeping logic stays in one
 // place.
-func (s *Server) recordCostAndPolicy(req types.Request, backendName, vendor string, costProfile types.CostProfile, usage types.Usage, latency time.Duration) {
+func (s *Server) recordCostAndPolicy(req types.Request, decision router.Decision, usage types.Usage, latency time.Duration) {
+	caps := decision.Backend.Capabilities()
 	if s.cost != nil {
-		s.cost.Observe(backendName, usage.TotalTokens, latency)
+		s.cost.Observe(decision.Backend.Name(), usage.TotalTokens, latency)
 	}
 	if s.policy != nil && !s.policy.Empty() {
-		usd := computeUSD(costProfile, usage)
-		s.policy.AccountUsage(req, vendor, usage.TotalTokens, usd)
+		usd := computeUSD(caps.CostProfile, usage)
+		s.policy.AccountUsage(req, caps.Vendor, usage.TotalTokens, usd)
 	}
 }
 
@@ -775,7 +776,7 @@ func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, req types.Re
 			CompletionTokens: span.CompletionTokens,
 			TotalTokens:      span.TotalTokens,
 		}
-		s.recordCostAndPolicy(req, decision.Backend.Name(), decision.Backend.Capabilities().Vendor, decision.Backend.Capabilities().CostProfile, usage, time.Since(span.StartedAt))
+		s.recordCostAndPolicy(req, decision, usage, time.Since(span.StartedAt))
 	}
 	done()
 }
