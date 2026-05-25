@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -275,13 +276,13 @@ func (m Match) matches(req types.Request, vendor string) bool {
 	if m.Tenant != "" && m.Tenant != req.TenantID {
 		return false
 	}
-	if len(m.Tenants) > 0 && !contains(m.Tenants, req.TenantID) {
+	if len(m.Tenants) > 0 && !slices.Contains(m.Tenants, req.TenantID) {
 		return false
 	}
 	if m.Model != "" && m.Model != req.Model {
 		return false
 	}
-	if len(m.Models) > 0 && !contains(m.Models, req.Model) {
+	if len(m.Models) > 0 && !slices.Contains(m.Models, req.Model) {
 		return false
 	}
 	if m.Agent != "" && m.Agent != req.AgentID {
@@ -294,15 +295,6 @@ func (m Match) matches(req types.Request, vendor string) bool {
 		return false
 	}
 	return true
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
 }
 
 func (d Document) validate() error {
