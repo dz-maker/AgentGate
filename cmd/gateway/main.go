@@ -178,13 +178,13 @@ func buildRegistry(cfg *config.Config) (*backend.Registry, error) {
 			}
 			backends = append(backends, b)
 		case "ollama":
-			endpoints := item.AllEndpoints()
-			if len(endpoints) == 0 {
+			ep := firstEndpoint(item)
+			if ep == "" {
 				return nil, fmt.Errorf("ollama backend %q needs an endpoint", item.Name)
 			}
 			b, err := ollama.New(ollama.Options{
 				Name:          item.Name,
-				Endpoint:      endpoints[0],
+				Endpoint:      ep,
 				Headers:       item.Headers,
 				HeaderTimeout: cfg.Timeouts.Header,
 			})
