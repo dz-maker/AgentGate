@@ -166,29 +166,13 @@ func buildRegistry(cfg *config.Config) (*backend.Registry, error) {
 		case "mock":
 			backends = append(backends, mock.New(item.Name))
 		case "vllm":
-			b, err := vllm.New(vllm.Options{
-				Name:           item.Name,
-				Endpoints:      item.AllEndpoints(),
-				Headers:        item.Headers,
-				HeaderTimeout:  cfg.Timeouts.Header,
-				HealthTimeout:  cfg.Timeouts.HealthCheck,
-				HealthInterval: 10 * time.Second,
-				Models:         item.Models,
-			})
+			b, err := vllm.New(vllmOpts(item, cfg.Timeouts))
 			if err != nil {
 				return nil, err
 			}
 			backends = append(backends, b)
 		case "sglang":
-			b, err := sglang.New(vllm.Options{
-				Name:           item.Name,
-				Endpoints:      item.AllEndpoints(),
-				Headers:        item.Headers,
-				HeaderTimeout:  cfg.Timeouts.Header,
-				HealthTimeout:  cfg.Timeouts.HealthCheck,
-				HealthInterval: 10 * time.Second,
-				Models:         item.Models,
-			})
+			b, err := sglang.New(vllmOpts(item, cfg.Timeouts))
 			if err != nil {
 				return nil, err
 			}
@@ -303,4 +287,16 @@ func firstEndpoint(b config.BackendConfig) string {
 		return eps[0]
 	}
 	return ""
+}
+
+func vllmOpts(item config.BackendConfig, timeouts config.TimeoutConfig) vllm.Options {
+	return vllm.Options{
+		Name:           item.Name,
+		Endpoints:      item.AllEndpoints(),
+		Headers:        item.Headers,
+		HeaderTimeout:  timeouts.Header,
+		HealthTimeout:  timeouts.HealthCheck,
+		HealthInterval: 10 * time.Second,
+		Models:         item.Models,
+	}
 }
