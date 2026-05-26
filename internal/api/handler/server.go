@@ -219,8 +219,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	if req.Model == "" {
-		span.Status = "error"
-		span.ErrorMessage = "model is required"
+		setSpanError(&span, "model is required")
 		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
@@ -233,8 +232,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	result := s.completeWithControl(r.Context(), req, routePolicy, &span)
 	if result.err != nil {
-		span.Status = "error"
-		span.ErrorMessage = result.err.Error()
+		setSpanError(&span, result.err.Error())
 		if errors.Is(result.err, backend.ErrNoHealthyBackend) {
 			result.status = http.StatusServiceUnavailable
 		}
@@ -531,6 +529,11 @@ func (s *Server) recordCostAndPolicy(req types.Request, decision router.Decision
 	}
 }
 
+func setSpanError(span *agenttrace.Span, msg string) {
+	span.Status = "error"
+	span.ErrorMessage = msg
+}
+
 func setSpanDecision(span *agenttrace.Span, decision router.Decision) {
 	span.Backend = decision.Backend.Name()
 	span.Instance = decision.InstanceID
@@ -638,8 +641,7 @@ func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, req types.Re
 
 	opened := s.openStreamWithControl(ctx, req, routePolicy)
 	if opened.err != nil {
-		span.Status = "error"
-		span.ErrorMessage = opened.err.Error()
+		setSpanError(span, opened.err.Error())
 		setBudgetRetryAfter(w, opened.attempt.policy.BudgetRetryAfter)
 		if opened.status == 0 {
 			opened.status = http.StatusBadGateway
