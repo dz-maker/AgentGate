@@ -248,11 +248,10 @@ func printVersion(w *os.File) {
 	}
 	fmt.Fprintf(w, "agentgate %s", version)
 	if revision != "" {
-		short := revision
-		if len(short) > 12 {
-			short = short[:12]
+		if len(revision) > 12 {
+			revision = revision[:12]
 		}
-		fmt.Fprintf(w, " (%s)", short)
+		fmt.Fprintf(w, " (%s)", revision)
 	}
 	fmt.Fprintf(w, " %s/%s %s\n", runtime.GOOS, runtime.GOARCH, runtime.Version())
 }
