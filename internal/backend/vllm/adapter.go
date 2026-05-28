@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentgate/agentgate/internal/backend"
+	"github.com/agentgate/agentgate/internal/backend/httpx"
 	"github.com/agentgate/agentgate/internal/parser"
 	"github.com/agentgate/agentgate/pkg/types"
 )
@@ -98,18 +98,6 @@ func New(opts Options) (*Adapter, error) {
 		opts.HeaderTimeout = 30 * time.Second
 	}
 
-	transport := &http.Transport{
-		MaxIdleConns:          512,
-		MaxIdleConnsPerHost:   128,
-		IdleConnTimeout:       90 * time.Second,
-		ResponseHeaderTimeout: opts.HeaderTimeout,
-		ForceAttemptHTTP2:     true,
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-	}
-
 	vendor := opts.Vendor
 	if vendor == "" {
 		vendor = "vllm"
@@ -124,7 +112,7 @@ func New(opts Options) (*Adapter, error) {
 	}
 	a := &Adapter{
 		name:       opts.Name,
-		client:     &http.Client{Transport: transport},
+		client:     httpx.NewClient(httpx.Options{HeaderTimeout: opts.HeaderTimeout}),
 		headers:    opts.Headers,
 		byID:       map[string]*Instance{},
 		stopCh:     make(chan struct{}),
