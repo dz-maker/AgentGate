@@ -327,6 +327,13 @@ func (s *Server) defaultAttempt(ctx context.Context, req types.Request) (request
 	return s.attemptFromDecision(req, decision), nil
 }
 
+func (a requestAttempt) budgetBlocked() (int, error, bool) {
+	if a.policy.BudgetExceeded {
+		return http.StatusTooManyRequests, errors.New(a.policy.BudgetReason), true
+	}
+	return 0, nil, false
+}
+
 func betterAttempt(candidate requestAttempt, candidateScore float64, current requestAttempt, currentScore float64, comparePrefix bool) bool {
 	if comparePrefix {
 		if candidate.decision.PrefixMatch.MatchedTokens != current.decision.PrefixMatch.MatchedTokens {
@@ -432,12 +439,8 @@ func (s *Server) completeChain(ctx context.Context, req types.Request, names []s
 }
 
 func (s *Server) completeAttempt(ctx context.Context, attempt requestAttempt) executionResult {
-	if attempt.policy.BudgetExceeded {
-		return executionResult{
-			attempt: attempt,
-			status:  http.StatusTooManyRequests,
-			err:     errors.New(attempt.policy.BudgetReason),
-		}
+	if status, err, blocked := attempt.budgetBlocked(); blocked {
+		return executionResult{attempt: attempt, status: status, err: err}
 	}
 	if s.semantic != nil {
 		if hit := s.semantic.LookupWithOptions(&attempt.req, attempt.cache); hit.Tier != "" {
@@ -621,12 +624,8 @@ func (s *Server) openStreamChain(ctx context.Context, req types.Request, names [
 }
 
 func (s *Server) openStreamAttempt(ctx context.Context, attempt requestAttempt) streamOpenResult {
-	if attempt.policy.BudgetExceeded {
-		return streamOpenResult{
-			attempt: attempt,
-			status:  http.StatusTooManyRequests,
-			err:     errors.New(attempt.policy.BudgetReason),
-		}
+	if status, err, blocked := attempt.budgetBlocked(); blocked {
+		return streamOpenResult{attempt: attempt, status: status, err: err}
 	}
 	stream, err := attempt.decision.Backend.Stream(ctx, &attempt.req)
 	if err != nil {
